@@ -9,11 +9,7 @@ services:
       - "8000:8000" # Map internal port 8000 to host port 80
     volumes:
       - ./app:/app # Mount code for hot-reloading
-    environment:
-      NODE_ENV: development
-      DEBUG: "true"
-      DATABASE_URL: postgres://appuser:apppassword@app-db:5432/appdb # URL pointing to the local dev DB service
-      KEYCLOAK_URL: http://keycloak:8080 # URL pointing to the local dev Keycloak service
+    env_file: .env
     depends_on:
       - app-db
       - keycloak
