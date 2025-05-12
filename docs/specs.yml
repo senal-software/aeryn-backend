@@ -1,0 +1,517 @@
+openapi: 3.0.3
+info:
+  title: My App Backend API
+  description: API for managing user accounts, billing, rewards, creator content, and interactions. Uses Keycloak for authentication and RevenueCat for IAP.
+  version: 1.0.0
+servers:
+  - url: https://api.yourapp.com/v1
+    description: Production Server
+  - url: https://dev-api.yourapp.com/v1
+    description: Development Server
+
+tags:
+  - name: Account
+    description: User account management, balance, and transactions.
+  - name: Billing
+    description: In-App Purchases and related operations.
+  - name: Rewards
+    description: Daily and other reward systems.
+  - name: Creators
+    description: Operations related to the Creators feed and individual creators.
+  - name: Webhooks
+    description: Incoming webhooks from third-party services.
+
+paths:
+  # == Account ==
+  /account/balance:
+    get:
+      tags:
+        - Account
+      summary: Get Current Coin Balance
+      description: Retrieves the current coin balance for the authenticated user.
+      operationId: getCoinBalance
+      security:
+        - KeycloakAuth: [read:balance] # Scope example
+      responses:
+        '200':
+          description: Successfully retrieved coin balance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoinBalance'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /account/transactions:
+    get:
+      tags:
+        - Account
+      summary: Get Transaction History
+      description: Retrieves the transaction history (purchases, rewards, spending) for the authenticated user.
+      operationId: getTransactionHistory
+      security:
+        - KeycloakAuth: [read:transactions] # Scope example
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of transactions to return.
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: offset
+          in: query
+          description: Number of transactions to skip for pagination.
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+      responses:
+        '200':
+          description: Successfully retrieved transaction history.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  # == Billing (focus on backend view after purchase) ==
+  /billing/packages:
+    get:
+      tags:
+        - Billing
+      summary: Get Available Coin Packages
+      description: Retrieves the list of coin packages available for purchase. The actual purchase flow is handled client-side via RevenueCat SDK.
+      operationId: getCoinPackages
+      security:
+        - KeycloakAuth: [] # Requires user to be logged in
+      responses:
+        '200':
+          description: Successfully retrieved list of coin packages.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CoinPackage'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  # == Rewards ==
+  /rewards/daily/status:
+    get:
+      tags:
+        - Rewards
+      summary: Check Daily Reward Status
+      description: Checks if the daily reward is available for the authenticated user to claim.
+      operationId: getDailyRewardStatus
+      security:
+        - KeycloakAuth: [read:rewards] # Scope example
+      responses:
+        '200':
+          description: Successfully retrieved daily reward status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyRewardStatus'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /rewards/daily/claim:
+    post:
+      tags:
+        - Rewards
+      summary: Claim Daily Reward
+      description: Attempts to claim the daily reward for the authenticated user.
+      operationId: claimDailyReward
+      security:
+        - KeycloakAuth: [write:rewards] # Scope example
+      responses:
+        '200':
+          description: Successfully claimed the daily reward.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyRewardClaimResult'
+        '400':
+          description: Bad Request (e.g., reward already claimed, not available yet).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  # == Creators ==
+  /creators/feed:
+    get:
+      tags:
+        - Creators
+      summary: Get Creators Feed Content
+      description: Retrieves the dynamic content for the main "Creators" page/feed. Structure depends on your specific feed design.
+      operationId: getCreatorsFeed
+      security:
+        - KeycloakAuth: [] # Or remove security if the feed is public
+      responses:
+        '200':
+          description: Successfully retrieved the creators feed content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorsFeed' # Define this structure based on your needs
+        '401':
+           description: Unauthorized (only if security is applied).
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Error'
+
+  /creators/{creatorId}/process-image:
+    post:
+      tags:
+        - Creators
+      summary: Process Image via Creator Endpoint
+      description: Sends an image to a specific Creator's endpoint for processing and receives a resulting image.
+      operationId: processCreatorImage
+      security:
+        - KeycloakAuth: [interact:creator] # Example scope
+      parameters:
+        - name: creatorId
+          in: path
+          description: The unique identifier of the Creator.
+          schema:
+            type: string
+            format: uuid # Or integer, depending on your ID type
+          required: true
+      requestBody:
+        description: Image file to be processed.
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: The image file to upload.
+              required:
+                - image
+      responses:
+        '200':
+          description: Image processed successfully, returning the resulting image.
+          content:
+            image/png: # Add other image types your endpoint might return (image/jpeg, etc.)
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Bad Request (e.g., invalid image format, missing file).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Creator not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # == Webhooks ==
+  /webhooks/revenuecat:
+    post:
+      tags:
+        - Webhooks
+      summary: RevenueCat Webhook Receiver
+      description: >
+        Endpoint to receive webhook events from RevenueCat regarding billing events
+        (e.g., subscriptions, purchases).
+        **Security:** This endpoint should be secured by verifying the `X-RevenueCat-Signature` header
+        using your RevenueCat webhook secret key within your backend logic. It does not use Keycloak authentication.
+      operationId: handleRevenueCatWebhook
+      requestBody:
+        description: RevenueCat event payload. Structure defined by RevenueCat.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevenueCatWebhookEvent' # Placeholder schema
+      responses:
+        '200':
+          description: Webhook received and acknowledged successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: received
+        '400':
+          description: Bad Request (e.g., invalid payload, signature verification failed - though signature failure might also return 401/403 depending on implementation).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error (e.g., failed to process the event).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    # == Data Models ==
+    CoinBalance:
+      type: object
+      properties:
+        balance:
+          type: integer
+          format: int64
+          description: The current coin balance of the user.
+          example: 1500
+      required:
+        - balance
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the transaction.
+        type:
+          type: string
+          enum: [PURCHASE, REWARD_DAILY, REWARD_OTHER, SPEND] # Adjust as needed
+          description: Type of transaction.
+        description:
+          type: string
+          description: 'A brief description of the transaction (e.g., "Daily Login Bonus", "Purchase: 100 Coin Pack", "Used on Creator X").'
+          example: "Purchase: 500 Coin Pack"
+        coinChange:
+          type: integer
+          format: int64
+          description: The amount of coins added (positive) or removed (negative) by this transaction.
+          example: 500
+        timestamp:
+          type: string
+          format: date-time
+          description: The date and time when the transaction occurred.
+      required:
+        - id
+        - type
+        - description
+        - coinChange
+        - timestamp
+
+    CoinPackage:
+      type: object
+      properties:
+        packageId:
+          type: string
+          description: Unique identifier for the coin package (e.g., SKU from App Store/Play Store).
+          example: "com.yourapp.coins500"
+        name:
+          type: string
+          description: Display name of the package.
+          example: "500 Coin Pack"
+        description:
+          type: string
+          description: Description of the package.
+          example: "Get 500 coins to use in the app."
+        coinAmount:
+          type: integer
+          format: int64
+          description: Number of coins granted by this package.
+          example: 500
+        priceString:
+          type: string
+          description: Formatted price string (client usually gets this from RevenueCat SDK).
+          example: "$4.99"
+      required:
+        - packageId
+        - name
+        - coinAmount
+
+    DailyRewardStatus:
+      type: object
+      properties:
+        isAvailable:
+          type: boolean
+          description: True if the daily reward can be claimed now.
+          example: true
+        nextAvailableTimestamp:
+          type: string
+          format: date-time
+          description: The timestamp when the reward will become available next (null if available now).
+          example: "2023-10-27T10:00:00Z"
+      required:
+        - isAvailable
+
+    DailyRewardClaimResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: True if the reward was claimed successfully.
+          example: true
+        coinsAwarded:
+          type: integer
+          format: int64
+          description: The number of coins awarded.
+          example: 50
+        newBalance:
+          type: integer
+          format: int64
+          description: The user's new coin balance after claiming the reward.
+          example: 1550
+      required:
+        - success
+        - coinsAwarded
+        - newBalance
+
+    CreatorSummary: # Example schema for items in the feed
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid # Or integer
+          description: Unique identifier for the creator.
+        name:
+          type: string
+          description: Display name of the creator.
+          example: "Awesome Artist"
+        thumbnailUrl:
+          type: string
+          format: url
+          description: URL for the creator's thumbnail image.
+          example: "https://cdn.yourapp.com/creators/123/thumb.jpg"
+      required:
+        - id
+        - name
+        - thumbnailUrl
+
+    CreatorsFeed: # Example structure - customize heavily!
+      type: object
+      properties:
+        featured:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreatorSummary'
+        newest:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreatorSummary'
+        categories: # Example of another section type
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              creators:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CreatorSummary'
+      # Add required fields as needed
+
+    RevenueCatWebhookEvent:
+      type: object
+      description: >
+        Represents the event data sent by RevenueCat.
+        Refer to RevenueCat's official documentation for the exact structure:
+        https://docs.revenuecat.com/docs/webhooks
+      properties:
+        event:
+          type: object # Structure varies greatly depending on event type
+        api_version:
+          type: string
+      # Mark required fields based on RevenueCat docs if known (e.g., 'event', 'api_version')
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: An application-specific error code.
+          example: "REWARD_ALREADY_CLAIMED"
+        message:
+          type: string
+          description: A human-readable description of the error.
+          example: "Daily reward has already been claimed for today."
+      required:
+        - code
+        - message
+
+  # == Security Schemes ==
+  securitySchemes:
+    KeycloakAuth:
+      type: oauth2
+      description: Authentication via Keycloak using OAuth2 Authorization Code flow or similar suitable flow (e.g., Implicit for SPAs, PKCE for mobile). Configure details according to your Keycloak realm and client setup.
+      flows:
+        authorizationCode: # Or choose 'implicit' or others depending on your client type
+          authorizationUrl: https://your-keycloak-domain.com/auth/realms/your-realm/protocol/openid-connect/auth # Replace with your Keycloak URL
+          tokenUrl: https://your-keycloak-domain.com/auth/realms/your-realm/protocol/openid-connect/token # Replace with your Keycloak URL
+          refreshUrl: https://your-keycloak-domain.com/auth/realms/your-realm/protocol/openid-connect/token # Replace with your Keycloak URL (often same as tokenUrl)
+          scopes:
+            openid: Standard OpenID Connect scope
+            profile: Access user profile information
+            email: Access user email
+            read:balance: Permission to read coin balance # Example custom scope
+            read:transactions: Permission to read transaction history # Example custom scope
+            read:rewards: Permission to read reward status # Example custom scope
+            write:rewards: Permission to claim rewards # Example custom scope
+            interact:creator: Permission to interact with creator endpoints # Example custom scope
+            # Add other custom scopes relevant to your API
+
+  # == Reusable Responses ==
+  responses:
+    UnauthorizedError:
+      description: Authentication information is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "UNAUTHENTICATED"
+            message: "Authentication required."
+    ForbiddenError:
+      description: Authenticated user does not have permission to perform this action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "PERMISSION_DENIED"
+            message: "User does not have the required scope/permission."
+
+# == Global Security Requirement (Optional) ==
+# If most endpoints require authentication, you can define it globally.
+# Endpoints like the webhook that *don't* need it can override with `security: []`.
+# security:
+#   - KeycloakAuth: [openid, profile, email] # Define default required scopes
