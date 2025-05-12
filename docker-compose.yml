@@ -1,0 +1,63 @@
+# Development-specific configurations and services
+version: '3.8'
+
+services:
+  aeryn-backend:
+    # Override base configurations for dev
+    build: .
+    ports:
+      - "8000:8000" # Map internal port 8000 to host port 80
+    volumes:
+      - ./app:/app # Mount code for hot-reloading
+    environment:
+      NODE_ENV: development
+      DEBUG: "true"
+      DATABASE_URL: postgres://appuser:apppassword@app-db:5432/appdb # URL pointing to the local dev DB service
+      KEYCLOAK_URL: http://keycloak:8080 # URL pointing to the local dev Keycloak service
+    depends_on:
+      - app-db
+      - keycloak
+    restart: "no" # Don't automatically restart in dev
+
+  app-db:
+    # Add a local database service for development
+    image: postgres:17
+    ports:
+      - "5432:5432" # Optional: expose for local tools
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppassword
+      POSTGRES_DB: appdb
+    volumes:
+      - dev_app_db_data:/var/lib/postgresql/data
+    networks:
+      - myapp_network
+    restart: "no"
+
+  keycloak:
+    # Add a local Keycloak service for development
+    image: quay.io/keycloak/keycloak:26.2.4 # Or specific version
+    command: start-dev
+    ports:
+      - "8080:8080" # Map internal port 8080 to host port 8080
+    environment:
+      KC_HOSTNAME: localhost
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: true
+      KC_LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 15s
+      timeout: 2s
+      retries: 15
+    networks:
+      - myapp_network
+    restart: "no"
+
+volumes:
+  dev_app_db_data:
+
+networks:
+  myapp_network: # Need to redefine if adding services to it
+    driver: bridge
