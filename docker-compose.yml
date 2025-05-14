@@ -8,16 +8,20 @@ services:
     ports:
       - "8000:8000" # Map internal port 8000 to host port 80
     volumes:
-      - ./app:/app # Mount code for hot-reloading
+      - ./alembic:/code/alembic
+      - ./app:/code/app 
     env_file: .env
     depends_on:
-      - app-db
+      - postgres
       - keycloak
     restart: "no" # Don't automatically restart in dev
+    networks:
+      - myapp_network
 
-  app-db:
+  postgres:
     # Add a local database service for development
     image: postgres:17
+    container_name: postgres
     ports:
       - "5432:5432" # Optional: expose for local tools
     environment:
@@ -50,6 +54,15 @@ services:
     networks:
       - myapp_network
     restart: "no"
+  
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8081:8080"
+    networks:
+      - myapp_network
+    depends_on:
+      - postgres
 
 volumes:
   dev_app_db_data:

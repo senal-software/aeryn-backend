@@ -6,8 +6,7 @@ from typing import Optional
 # Shared properties
 class AccountBase(BaseModel):
     email: EmailStr
-    is_active: Optional[bool] = True
-    is_superuser: Optional[bool] = False
+    coin_balance: int
 
 # Properties to receive via API on creation
 class AccountCreate(AccountBase):
@@ -16,8 +15,7 @@ class AccountCreate(AccountBase):
 # Properties to receive via API on update
 class AccountUpdate(AccountBase):
     email: Optional[EmailStr] = None # Allow updating email
-    is_active: Optional[bool] = None
-    is_superuser: Optional[bool] = None
+    coin_balance: Optional[int] = None
 
 # Properties stored in DB (without password)
 class AccountInDBBase(AccountBase):
@@ -36,4 +34,4 @@ class Account(AccountInDBBase):
 
 # Properties stored in DB
 class AccountInDB(AccountInDBBase):
-    hashed_password: str
+    pass
